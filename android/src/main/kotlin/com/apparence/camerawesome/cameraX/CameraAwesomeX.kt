@@ -168,7 +168,7 @@ class CameraAwesomeX : CameraInterface, FlutterPlugin, ActivityAware {
         if (mode != CaptureModes.ANALYSIS_ONLY) {
             cameraState.updateLifecycle(activity!!)
             // Zoom should be set after updateLifeCycle
-            if (zoom > 0) {
+            if (zoom >= 0) {
                 // TODO Find a better way to set initial zoom than using a postDelayed
                 Handler(Looper.getMainLooper()).postDelayed({
                     (cameraState.concurrentCamera?.cameras?.firstOrNull()
@@ -303,6 +303,8 @@ class CameraAwesomeX : CameraInterface, FlutterPlugin, ActivityAware {
     }
 
     private fun getOrientedSize(width: Int, height: Int): Size {
+        // sensorRotationDegrees % 180 == 0 means the sensor is aligned with portrait;
+        // when false (the common 90° sensor case) we swap to get camera-buffer coords.
         val portrait = cameraState.portrait
         return Size(
             if (portrait) width else height,
@@ -754,13 +756,20 @@ class CameraAwesomeX : CameraInterface, FlutterPlugin, ActivityAware {
         val resolutionInfo = preview.resolutionInfo ?: return PreviewSize(0.0, 0.0)
         val res = resolutionInfo.resolution
 
-        val rotation = resolutionInfo.rotationDegrees
-        val previewSize = when (rotation) {
-            90, 270 -> PreviewSize(res.height.toDouble(), res.width.toDouble())
-            else -> PreviewSize(res.width.toDouble(), res.height.toDouble())
+        // Flutter applies SurfaceTexture.getTransformMatrix() when rendering the Texture
+        // widget, so the camera content appears rotated by rotationDegrees.  When
+        // rotationDegrees is 90 or 270, the width and height are visually swapped —
+        // report them swapped so Flutter lays out the preview in the correct orientation.
+        // This is correct for both phones in portrait (rotationDegrees=90) and tablets
+        // in their natural landscape orientation (rotationDegrees=90 at ROTATION_0).
+        val rotationDegrees = resolutionInfo.rotationDegrees
+        val previewSize = if (rotationDegrees % 180 != 0) {
+            PreviewSize(res.height.toDouble(), res.width.toDouble())
+        } else {
+            PreviewSize(res.width.toDouble(), res.height.toDouble())
         }
 
-        Log.d("CameraX", "Preview size: width=${previewSize.width}, height=${previewSize.height}, rotation=$rotation")
+        Log.d("CameraX", "Preview size: width=${previewSize.width}, height=${previewSize.height}, rotation=${resolutionInfo.rotationDegrees}")
         return previewSize
     }
 
