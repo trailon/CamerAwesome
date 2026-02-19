@@ -104,6 +104,12 @@ class CameraAwesomeBuilder extends StatefulWidget {
   /// do image analysis
   final bool showPreview;
 
+  /// Rotate the preview content by 90 degrees increments (0, 1, 2, 3)
+  ///
+  /// This is useful when the preview is not in the correct orientation
+  /// For example on some tablets in landscape mode, the preview might be rotated by 90 degrees
+  final int? previewContentRotation;
+
   final PictureInPictureConfigBuilder? pictureInPictureConfigBuilder;
 
   /// THe default filter to use when the camera is started.
@@ -139,6 +145,7 @@ class CameraAwesomeBuilder extends StatefulWidget {
     required this.pictureInPictureConfigBuilder,
     this.availableFilters,
     this.onMediaCaptureEvent,
+    this.previewContentRotation,
   });
 
   /// Use the camera with the built-in interface.
@@ -183,7 +190,8 @@ class CameraAwesomeBuilder extends StatefulWidget {
       PictureInPictureConfigBuilder? pictureInPictureConfigBuilder,
       AwesomeFilter? defaultFilter,
       List<AwesomeFilter>? availableFilters,
-      OnMediaCaptureEvent? onMediaCaptureEvent})
+      OnMediaCaptureEvent? onMediaCaptureEvent,
+      int? previewContentRotation})
       : this._(
           sensorConfig: sensorConfig ??
               SensorConfig.single(
@@ -215,6 +223,7 @@ class CameraAwesomeBuilder extends StatefulWidget {
           defaultFilter: defaultFilter,
           availableFilters: availableFilters ?? awesomePresetFiltersList,
           onMediaCaptureEvent: onMediaCaptureEvent,
+          previewContentRotation: previewContentRotation,
         );
 
   /// 🚧 Experimental
@@ -239,6 +248,7 @@ class CameraAwesomeBuilder extends StatefulWidget {
     PictureInPictureConfigBuilder? pictureInPictureConfigBuilder,
     List<AwesomeFilter>? filters,
     OnMediaCaptureEvent? onMediaCaptureEvent,
+    int? previewContentRotation,
   }) : this._(
           sensorConfig: sensorConfig ??
               SensorConfig.single(
@@ -262,6 +272,7 @@ class CameraAwesomeBuilder extends StatefulWidget {
           pictureInPictureConfigBuilder: pictureInPictureConfigBuilder,
           availableFilters: filters,
           onMediaCaptureEvent: onMediaCaptureEvent,
+          previewContentRotation: previewContentRotation,
         );
 
   /// Use this constructor when you don't want to take pictures or record videos.
@@ -279,6 +290,7 @@ class CameraAwesomeBuilder extends StatefulWidget {
     EdgeInsets previewPadding = EdgeInsets.zero,
     Alignment previewAlignment = Alignment.center,
     PictureInPictureConfigBuilder? pictureInPictureConfigBuilder,
+    int? previewContentRotation,
   }) : this._(
           sensorConfig: sensorConfig ??
               SensorConfig.single(sensor: Sensor.position(SensorPosition.back)),
@@ -298,6 +310,7 @@ class CameraAwesomeBuilder extends StatefulWidget {
           previewPadding: previewPadding,
           previewAlignment: previewAlignment,
           pictureInPictureConfigBuilder: pictureInPictureConfigBuilder,
+          previewContentRotation: previewContentRotation,
         );
 
   /// Use this constructor when you only want to do image analysis.
@@ -334,6 +347,7 @@ class CameraAwesomeBuilder extends StatefulWidget {
           previewAlignment: Alignment.center,
           showPreview: false,
           pictureInPictureConfigBuilder: null,
+          previewContentRotation: null,
         );
 
   @override
@@ -363,7 +377,12 @@ class _CameraWidgetBuilder extends State<CameraAwesomeBuilder>
 
   @override
   void didChangeDependencies() {
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeRight,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.portraitUp
+    ]);
     super.didChangeDependencies();
   }
 
@@ -494,6 +513,7 @@ class _CameraWidgetBuilder extends State<CameraAwesomeBuilder>
                         previewDecoratorBuilder: widget.previewDecoratorBuilder,
                         pictureInPictureConfigBuilder:
                             widget.pictureInPictureConfigBuilder,
+                        previewContentRotation: widget.previewContentRotation,
                       ),
               ),
             ],

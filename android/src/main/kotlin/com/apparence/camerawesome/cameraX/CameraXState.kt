@@ -57,6 +57,16 @@ data class CameraXState(
     var imageAnalysisBuilder: ImageAnalysisBuilder? = null
     private var imageAnalysis: ImageAnalysis? = null
 
+    // Tracks the current Surface.ROTATION_* value from onOrientationChanged.
+    // Used in getEffectivPreviewSize to avoid relying on displayMetrics which
+    // may not update when the activity is locked to portrait orientation.
+    var currentRotation: Int = Surface.ROTATION_0
+
+    // True when the device's natural (ROTATION_0) orientation is portrait.
+    // Phones are naturally portrait; tablets are typically naturally landscape.
+    // Computed once in updateLifecycle() from physical screen dimensions.
+    var naturallyPortrait: Boolean = true
+
     private val mainCameraInfos: CameraInfo
         @SuppressLint("RestrictedApi") get() {
             if (previewCamera == null && concurrentCamera == null) {
@@ -95,6 +105,29 @@ data class CameraXState(
         imageCaptures.clear()
         videoCaptures.clear()
         val resolutionSelector = getResolutionSelector(aspectRatio ?: AspectRatio.RATIO_4_3)
+        val displayRotation = activity.windowManager.defaultDisplay.rotation
+        val dm = activity.resources.displayMetrics
+        // Determine the device's natural (ROTATION_0) orientation from physical
+        // screen dimensions, correcting for the current rotation so this is
+        // accurate even if the device is already rotated when called.
+        naturallyPortrait = if (displayRotation == Surface.ROTATION_0 || displayRotation == Surface.ROTATION_180) {
+            dm.heightPixels > dm.widthPixels
+        } else {
+            // Device is rotated 90°/270°: width/height are swapped vs natural
+            dm.widthPixels > dm.heightPixels
+        }
+        currentRotation = displayRotation
+        // Is the device currently in landscape (accounting for natural orientation)?
+        val isLandscape = if (naturallyPortrait) {
+            displayRotation == Surface.ROTATION_90 || displayRotation == Surface.ROTATION_270
+        } else {
+            displayRotation == Surface.ROTATION_0 || displayRotation == Surface.ROTATION_180
+        }
+        val effectiveRational = if (isLandscape && rational.denominator != rational.numerator) {
+            Rational(rational.denominator, rational.numerator)
+        } else {
+            rational
+        }
         if (cameraProvider.isMultiCamSupported() && sensors.size > 1) {
             val singleCameraConfigs = mutableListOf<ConcurrentCamera.SingleCameraConfig>()
             var isFirst = true
@@ -131,10 +164,14 @@ data class CameraXState(
 
 
                 val preview = if (aspectRatio != null) {
-                    Preview.Builder().setTargetAspectRatio(aspectRatio!!)
+                    Preview.Builder()
+                        .setTargetAspectRatio(aspectRatio!!)
+                        .setTargetRotation(activity.windowManager.defaultDisplay.rotation)
                         .build()
                 } else {
-                    Preview.Builder().build()
+                    Preview.Builder()
+                        .setTargetRotation(activity.windowManager.defaultDisplay.rotation)
+                        .build()
                 }
 
                 useCaseGroupBuilder.addUseCase(preview)
@@ -173,7 +210,7 @@ data class CameraXState(
 
                 isFirst = false
                 useCaseGroupBuilder.setViewPort(
-                    ViewPort.Builder(rational, Surface.ROTATION_0).build()
+                    ViewPort.Builder(effectiveRational, displayRotation).build()
                 )
                 singleCameraConfigs.add(
                     ConcurrentCamera.SingleCameraConfig(
@@ -201,9 +238,12 @@ data class CameraXState(
                     if (aspectRatio != null) {
                         Preview.Builder()
                             .setResolutionSelector(resolutionSelector)
+                            .setTargetRotation(activity.windowManager.defaultDisplay.rotation)
                             .build()
                     } else {
-                        Preview.Builder().build()
+                        Preview.Builder()
+                            .setTargetRotation(activity.windowManager.defaultDisplay.rotation)
+                            .build()
                     }
                 )
 
@@ -258,7 +298,7 @@ data class CameraXState(
                 imageAnalysis = null
             }
             // TODO Orientation might be wrong, to be verified
-            useCaseGroupBuilder.setViewPort(ViewPort.Builder(rational, Surface.ROTATION_0).build())
+            useCaseGroupBuilder.setViewPort(ViewPort.Builder(effectiveRational, displayRotation).build())
                 .build()
 
             concurrentCamera = null
@@ -437,23 +477,21 @@ data class CameraXState(
     }
 
     override fun onOrientationChanged(orientation: Int) {
-        imageAnalysis?.targetRotation = when (orientation) {
-            in 225 until 315 -> {
-                Surface.ROTATION_90
-            }
-
-            in 135 until 225 -> {
-                Surface.ROTATION_180
-            }
-
-            in 45 until 135 -> {
-                Surface.ROTATION_270
-            }
-
-            else -> {
-                Surface.ROTATION_0
-            }
+        val rotation = when (orientation) {
+            in 225 until 315 -> Surface.ROTATION_90
+            in 135 until 225 -> Surface.ROTATION_180
+            in 45 until 135  -> Surface.ROTATION_270
+            else              -> Surface.ROTATION_0
         }
+        currentRotation = rotation
+        imageAnalysis?.targetRotation = rotation
+        // Do NOT update previews[].targetRotation here.
+        // OrientationEventListener reports degrees from the hypothetical portrait-up
+        // position, so on landscape-natural tablets held at ROTATION_0 it reports ~270°,
+        // which maps to ROTATION_90.  Applying that to the Preview use case changes
+        // resolutionInfo.rotationDegrees from 90→0, breaking the dimension swap in
+        // getEffectivPreviewSize and shrinking the contain preview to ~1/3 of the screen.
+        // The preview targetRotation is set correctly once in Preview.Builder() at init.
     }
 
     fun updateAspectRatio(newAspectRatio: String) {

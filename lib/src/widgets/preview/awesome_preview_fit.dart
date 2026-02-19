@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:camerawesome/camerawesome_plugin.dart';
@@ -146,31 +147,48 @@ class PreviewFitWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final transformController = TransformationController()
+    // The viewport always fills the full available space so that contain mode
+    // centres the preview with black bars and cover mode clips the overflow —
+    // both behave correctly inside a RotatedBox or without one.
+    final tx = (constraints.maxWidth - previewSize.width * scale) / 2.0;
+    final ty = (constraints.maxHeight - previewSize.height * scale) / 2.0;
+    final androidTransformController = TransformationController()
+      ..value = (Matrix4.identity()
+        ..translate(tx, ty)
+        ..scale(scale));
+    final iosTransformContoller = TransformationController()
       ..value = (Matrix4.identity()..scale(scale));
 
-    return Align(
-      alignment: alignment,
-      child: SizedBox(
-        height: previewSize.height * scale,
-        child: Padding(
-          padding: previewPadding ?? EdgeInsets.zero,
-          child: InteractiveViewer(
-            key: UniqueKey(),
-            transformationController: transformController,
-            scaleEnabled: false,
-            constrained: false,
-            panEnabled: false,
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              width: previewSize.width,
-              height: previewSize.height,
-              child: child,
-            ),
-          ),
+    final interactiveViewerWidget = Padding(
+      padding: previewPadding ?? EdgeInsets.zero,
+      child: InteractiveViewer(
+        key: UniqueKey(),
+        transformationController: Platform.isAndroid
+            ? androidTransformController
+            : iosTransformContoller,
+        scaleEnabled: false,
+        constrained: false,
+        panEnabled: false,
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: previewSize.width,
+          height: previewSize.height,
+          child: child,
         ),
       ),
     );
+
+    if (Platform.isIOS) {
+      return Align(
+        alignment: alignment,
+        child: SizedBox(
+          height: previewSize.height * scale,
+          child: interactiveViewerWidget,
+        ),
+      );
+    }
+
+    return interactiveViewerWidget;
   }
 
   double get previewRatio => previewSize.width / previewSize.height;

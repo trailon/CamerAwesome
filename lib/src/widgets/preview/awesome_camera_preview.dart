@@ -28,6 +28,7 @@ class AwesomeCameraPreview extends StatefulWidget {
   final EdgeInsets padding;
   final Alignment alignment;
   final PictureInPictureConfigBuilder? pictureInPictureConfigBuilder;
+  final int? previewContentRotation;
 
   const AwesomeCameraPreview({
     super.key,
@@ -41,6 +42,7 @@ class AwesomeCameraPreview extends StatefulWidget {
     required this.padding,
     required this.alignment,
     this.pictureInPictureConfigBuilder,
+    this.previewContentRotation,
   });
 
   @override
@@ -58,6 +60,7 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
 
   StreamSubscription? _sensorConfigSubscription;
   StreamSubscription? _aspectRatioSubscription;
+  StreamSubscription? _orientationSubscription;
   CameraAspectRatios? _aspectRatio;
   double? _aspectRatioValue;
   AnalysisPreview? _preview;
@@ -105,6 +108,16 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
         }
       });
     });
+    if (Platform.isAndroid) {
+      _orientationSubscription =
+          CamerawesomePlugin.getNativeOrientation()?.listen((_) async {
+        if (!mounted) return;
+        final size = await widget.state.previewSize(0);
+        if (mounted && size != _previewSize) {
+          setState(() => _previewSize = size);
+        }
+      });
+    }
   }
 
   Future _loadTextures() async {
@@ -139,7 +152,19 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
   void dispose() {
     _sensorConfigSubscription?.cancel();
     _aspectRatioSubscription?.cancel();
+    _orientationSubscription?.cancel();
     super.dispose();
+  }
+
+  Size get _orientedPreviewSize {
+    if (_previewSize == null) return Size.zero;
+   /*  if (Platform.isAndroid &&
+        widget.previewContentRotation != null &&
+        widget.previewContentRotation! % 2 == 1) {
+      return Size(_previewSize!.height, _previewSize!.width);
+    } */
+
+    return _previewSize!.toSize();
   }
 
   @override
@@ -160,46 +185,54 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
           return Stack(
             children: [
               Positioned.fill(
-                child: AnimatedPreviewFit(
-                  alignment: widget.alignment,
-                  previewFit: widget.previewFit,
-                  previewSize: _previewSize!,
-                  previewPadding: widget.padding,
-                  constraints: constraints,
-                  sensor: widget.state.sensorConfig.sensors.first,
-                  onPreviewCalculated: (preview) {
-                    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-                      if (mounted) {
-                        setState(() {
-                          _preview = preview;
-                        });
-                      }
-                    });
-                  },
-                  child: AwesomeCameraGestureDetector(
-                    onPreviewTapBuilder:
-                        widget.onPreviewTap != null && _previewSize != null
-                            ? OnPreviewTapBuilder(
-                                pixelPreviewSizeGetter: () => _previewSize!,
-                                flutterPreviewSizeGetter: () =>
-                                    _previewSize!, //croppedPreviewSize,
-                                onPreviewTap: widget.onPreviewTap!,
-                              )
-                            : null,
-                    onPreviewScale: widget.onPreviewScale,
-                    initialZoom: widget.state.sensorConfig.zoom,
-                    child: StreamBuilder<AwesomeFilter>(
-                      //FIX performances
-                      stream: widget.state.filter$,
-                      builder: (context, snapshot) {
-                        return snapshot.hasData &&
-                                snapshot.data != AwesomeFilter.None
-                            ? ColorFiltered(
-                                colorFilter: snapshot.data!.preview,
-                                child: _textures.first,
-                              )
-                            : _textures.first;
-                      },
+                                  child: AnimatedPreviewFit(
+                    alignment: widget.alignment,
+                    previewFit: widget.previewFit,
+                    previewSize: Platform.isIOS
+                        ? _previewSize!
+                        : PreviewSize(
+                            width: _orientedPreviewSize.width,
+                            height: _orientedPreviewSize.height,
+                          ),
+                    previewPadding: widget.padding,
+                    constraints: constraints,
+                    sensor: widget.state.sensorConfig.sensors.first,
+                    onPreviewCalculated: (preview) {
+                      WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+                        if (mounted) {
+                          setState(() {
+                            _preview = preview;
+                          });
+                        }
+                      });
+                    },
+                  child: RotatedBox(
+                    quarterTurns: widget.previewContentRotation ?? 0,
+                    child: AwesomeCameraGestureDetector(
+                      onPreviewTapBuilder:
+                          widget.onPreviewTap != null && _previewSize != null
+                              ? OnPreviewTapBuilder(
+                                  pixelPreviewSizeGetter: () => _previewSize!,
+                                  flutterPreviewSizeGetter: () =>
+                                      _previewSize!, //croppedPreviewSize,
+                                  onPreviewTap: widget.onPreviewTap!,
+                                )
+                              : null,
+                      onPreviewScale: widget.onPreviewScale,
+                      initialZoom: widget.state.sensorConfig.zoom,
+                      child: StreamBuilder<AwesomeFilter>(
+                        //FIX performances
+                        stream: widget.state.filter$,
+                        builder: (context, snapshot) {
+                          return snapshot.hasData &&
+                                  snapshot.data != AwesomeFilter.None
+                              ? ColorFiltered(
+                                  colorFilter: snapshot.data!.preview,
+                                  child: _textures.first,
+                                )
+                              : _textures.first;
+                        },
+                      ),
                     ),
                   ),
                 ),

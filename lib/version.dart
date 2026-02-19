@@ -1,0 +1,1 @@
+String cameraAwesomeVersion = "CamerAwesomeVersion 1.1.0";
